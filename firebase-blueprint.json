@@ -1,0 +1,280 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Learner profile, CEFR level, XP, streaks, daily goals, and skill scores.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "Learner display name" },
+        "email": { "type": "string", "description": "Optional learner email (PII isolated to owner)" },
+        "avatarTag": { "type": "string", "description": "Avatar identifier" },
+        "cefrLevel": { "type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"] },
+        "uiLanguage": { "type": "string", "enum": ["fr", "en", "ar"] },
+        "xp": { "type": "integer", "description": "Total XP earned" },
+        "streakDays": { "type": "integer", "description": "Active daily streak count" },
+        "dailyGoalMinutes": { "type": "integer", "description": "Daily learning target in minutes" },
+        "dailyMinutesCompleted": { "type": "integer", "description": "Minutes studied today" },
+        "wordsLearned": { "type": "integer", "description": "Count of mastered vocabulary words" },
+        "lessonsCompleted": { "type": "integer", "description": "Count of finished lessons" },
+        "grammarScore": { "type": "integer", "description": "Grammar proficiency score 0-100" },
+        "pronunciationScore": { "type": "integer", "description": "Speaking pronunciation score 0-100" },
+        "listeningScore": { "type": "integer", "description": "Listening comprehension score 0-100" },
+        "writingScore": { "type": "integer", "description": "Writing proficiency score 0-100" },
+        "placementCompleted": { "type": "boolean", "description": "Whether initial placement test was completed" },
+        "subscriptionTier": { "type": "string", "enum": ["Free", "Premium", "AI Pro", "Family"] },
+        "selectedTrackId": { "type": "string", "description": "Active structured learning path ID" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "cefrLevel",
+        "uiLanguage",
+        "xp",
+        "streakDays",
+        "dailyGoalMinutes",
+        "dailyMinutesCompleted",
+        "wordsLearned",
+        "lessonsCompleted",
+        "grammarScore",
+        "pronunciationScore",
+        "listeningScore",
+        "writingScore",
+        "placementCompleted",
+        "subscriptionTier",
+        "selectedTrackId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserFlashcard": {
+      "title": "UserFlashcard",
+      "description": "User flashcard with spaced repetition box level and favorite status.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "word": { "type": "string" },
+        "translationFr": { "type": "string" },
+        "translationAr": { "type": "string" },
+        "phonetic": { "type": "string" },
+        "example": { "type": "string" },
+        "category": { "type": "string" },
+        "cefrLevel": { "type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"] },
+        "isFavorite": { "type": "boolean" },
+        "boxLevel": { "type": "integer" },
+        "nextReviewEpochDay": { "type": "integer" },
+        "mastered": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "word",
+        "translationFr",
+        "translationAr",
+        "phonetic",
+        "example",
+        "category",
+        "cefrLevel",
+        "isFavorite",
+        "boxLevel",
+        "nextReviewEpochDay",
+        "mastered",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LearningProgress": {
+      "title": "LearningProgress",
+      "description": "Record of completed lessons, quizzes, placement assessments, or speaking/writing evaluations.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "moduleType": { "type": "string", "enum": ["vocabulary", "grammar", "listening", "speaking", "reading", "writing", "quiz", "placement", "path"] },
+        "itemId": { "type": "string" },
+        "title": { "type": "string" },
+        "cefrLevel": { "type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"] },
+        "score": { "type": "integer" },
+        "maxScore": { "type": "integer" },
+        "xpEarned": { "type": "integer" },
+        "feedback": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "moduleType",
+        "itemId",
+        "title",
+        "cefrLevel",
+        "score",
+        "maxScore",
+        "xpEarned",
+        "feedback",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TutorMessage": {
+      "title": "TutorMessage",
+      "description": "AI English Tutor conversation message with instant grammar correction and explanation.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "scenario": { "type": "string" },
+        "content": { "type": "string" },
+        "correction": { "type": "string" },
+        "explanation": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "role",
+        "scenario",
+        "content",
+        "correction",
+        "explanation",
+        "createdAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Non-PII public leaderboard entry for global and friend rankings.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "cefrLevel": { "type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"] },
+        "xp": { "type": "integer" },
+        "streakDays": { "type": "integer" },
+        "badgesCount": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "cefrLevel",
+        "xp",
+        "streakDays",
+        "badgesCount",
+        "updatedAt"
+      ]
+    },
+    "CatalogItem": {
+      "title": "CatalogItem",
+      "description": "Admin/educator authored course, lesson, vocabulary entry, or quiz exercise.",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "itemType": { "type": "string", "enum": ["course", "lesson", "vocabulary", "exercise"] },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "cefrLevel": { "type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"] },
+        "contentBody": { "type": "string" },
+        "translationFr": { "type": "string" },
+        "translationAr": { "type": "string" },
+        "quizQuestion": { "type": "string" },
+        "quizOptionsCsv": { "type": "string" },
+        "quizAnswer": { "type": "string" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "authorId",
+        "itemType",
+        "title",
+        "subtitle",
+        "cefrLevel",
+        "contentBody",
+        "translationFr",
+        "translationAr",
+        "quizQuestion",
+        "quizOptionsCsv",
+        "quizAnswer",
+        "published",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminRole": {
+      "title": "AdminRole",
+      "description": "Trusted admin role marker document.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string" }
+      },
+      "required": ["role"]
+    },
+    "CommunityMessage": {
+      "title": "CommunityMessage",
+      "description": "Peer-to-peer and thematic channel conversation message between learners with collaborative grammar corrections.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string", "description": "Firebase Auth UID of the message author" },
+        "senderName": { "type": "string", "description": "Display name of the author" },
+        "senderCefr": { "type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"] },
+        "roomId": { "type": "string", "description": "Channel ID or Tandem 1-to-1 room ID" },
+        "recipientId": { "type": "string", "description": "Optional recipient UID for 1-to-1 tandem messages" },
+        "recipientName": { "type": "string", "description": "Optional recipient display name for 1-to-1 tandem messages" },
+        "content": { "type": "string", "description": "Message content written by the learner" },
+        "correctionSuggestion": { "type": "string", "description": "Optional peer grammar correction or phrasing suggestion" },
+        "correctedByName": { "type": "string", "description": "Display name of peer who suggested the correction" },
+        "likesCount": { "type": "integer", "description": "Number of peer likes/encouragements" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": [
+        "senderId",
+        "senderName",
+        "senderCefr",
+        "roomId",
+        "recipientId",
+        "recipientName",
+        "content",
+        "correctionSuggestion",
+        "correctedByName",
+        "likesCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile and learning metrics isolated per authenticated user."
+    },
+    "/users/{userId}/flashcards/{cardId}": {
+      "schema": { "$ref": "#/entities/UserFlashcard" },
+      "description": "Spaced repetition flashcards owned by a specific user."
+    },
+    "/users/{userId}/progress/{recordId}": {
+      "schema": { "$ref": "#/entities/LearningProgress" },
+      "description": "Learning progress records owned by a specific user."
+    },
+    "/users/{userId}/tutor_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/TutorMessage" },
+      "description": "AI English Tutor chat history owned by a specific user."
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Global non-PII XP and streak leaderboard."
+    },
+    "/custom_catalog/{itemId}": {
+      "schema": { "$ref": "#/entities/CatalogItem" },
+      "description": "Admin-managed dynamic courses, lessons, vocabulary, and exercises."
+    },
+    "/community_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/CommunityMessage" },
+      "description": "Real-time user-to-user conversation space (thematic channels and 1-to-1 tandem chats)."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRole" },
+      "description": "Trusted administrator lookup table."
+    }
+  }
+}

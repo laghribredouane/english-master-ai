@@ -1,0 +1,423 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Hardened Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidCefr(level) {
+      return level is string && level in ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+    }
+
+    function isValidLang(lang) {
+      return lang is string && lang in ['fr', 'en', 'ar'];
+    }
+
+    function isValidTier(tier) {
+      return tier is string && tier in ['Free', 'Premium', 'AI Pro', 'Family'];
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        ('email' in request.auth.token && request.auth.token.email == 'laghribredouane@gmail.com' && request.auth.token.email_verified == true)
+      );
+    }
+
+    // Validation Helpers
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 160)) &&
+             (!('avatarTag' in data) || data.avatarTag == null || (data.avatarTag is string && data.avatarTag.size() <= 60)) &&
+             isValidCefr(data.cefrLevel) &&
+             isValidLang(data.uiLanguage) &&
+             data.xp is int && data.xp >= 0 && data.xp <= 10000000 &&
+             data.streakDays is int && data.streakDays >= 0 && data.streakDays <= 10000 &&
+             data.dailyGoalMinutes is int && data.dailyGoalMinutes >= 5 && data.dailyGoalMinutes <= 240 &&
+             data.dailyMinutesCompleted is int && data.dailyMinutesCompleted >= 0 && data.dailyMinutesCompleted <= 1440 &&
+             data.wordsLearned is int && data.wordsLearned >= 0 && data.wordsLearned <= 100000 &&
+             data.lessonsCompleted is int && data.lessonsCompleted >= 0 && data.lessonsCompleted <= 100000 &&
+             data.grammarScore is int && data.grammarScore >= 0 && data.grammarScore <= 100 &&
+             data.pronunciationScore is int && data.pronunciationScore >= 0 && data.pronunciationScore <= 100 &&
+             data.listeningScore is int && data.listeningScore >= 0 && data.listeningScore <= 100 &&
+             data.writingScore is int && data.writingScore >= 0 && data.writingScore <= 100 &&
+             data.placementCompleted is bool &&
+             isValidTier(data.subscriptionTier) &&
+             data.selectedTrackId is string && data.selectedTrackId.size() >= 1 && data.selectedTrackId.size() <= 64 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserFlashcard(data, ownerUid) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId == ownerUid &&
+             data.word is string && data.word.size() >= 1 && data.word.size() <= 120 &&
+             data.translationFr is string && data.translationFr.size() >= 1 && data.translationFr.size() <= 200 &&
+             data.translationAr is string && data.translationAr.size() >= 1 && data.translationAr.size() <= 200 &&
+             data.phonetic is string && data.phonetic.size() <= 120 &&
+             data.example is string && data.example.size() <= 500 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             isValidCefr(data.cefrLevel) &&
+             data.isFavorite is bool &&
+             data.boxLevel is int && data.boxLevel >= 1 && data.boxLevel <= 5 &&
+             data.nextReviewEpochDay is int && data.nextReviewEpochDay >= 0 && data.nextReviewEpochDay <= 100000 &&
+             data.mastered is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidLearningProgress(data, ownerUid) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId == ownerUid &&
+             data.moduleType is string && data.moduleType in ['vocabulary', 'grammar', 'listening', 'speaking', 'reading', 'writing', 'quiz', 'placement', 'path'] &&
+             data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 120 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             isValidCefr(data.cefrLevel) &&
+             data.score is int && data.score >= 0 && data.score <= 1000 &&
+             data.maxScore is int && data.maxScore >= 1 && data.maxScore <= 1000 &&
+             data.xpEarned is int && data.xpEarned >= 0 && data.xpEarned <= 5000 &&
+             data.feedback is string && data.feedback.size() <= 2000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTutorMessage(data, ownerUid) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId == ownerUid &&
+             data.role is string && data.role in ['user', 'assistant'] &&
+             data.scenario is string && data.scenario.size() >= 1 && data.scenario.size() <= 60 &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 4000 &&
+             data.correction is string && data.correction.size() <= 2000 &&
+             data.explanation is string && data.explanation.size() <= 2000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidLeaderboardEntry(data, ownerUid) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId == ownerUid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             isValidCefr(data.cefrLevel) &&
+             data.xp is int && data.xp >= 0 && data.xp <= 10000000 &&
+             data.streakDays is int && data.streakDays >= 0 && data.streakDays <= 10000 &&
+             data.badgesCount is int && data.badgesCount >= 0 && data.badgesCount <= 500 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCatalogItem(data) {
+      return data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128 &&
+             data.itemType is string && data.itemType in ['course', 'lesson', 'vocabulary', 'exercise'] &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+             data.subtitle is string && data.subtitle.size() <= 300 &&
+             isValidCefr(data.cefrLevel) &&
+             data.contentBody is string && data.contentBody.size() <= 5000 &&
+             data.translationFr is string && data.translationFr.size() <= 500 &&
+             data.translationAr is string && data.translationAr.size() <= 500 &&
+             data.quizQuestion is string && data.quizQuestion.size() <= 500 &&
+             data.quizOptionsCsv is string && data.quizOptionsCsv.size() <= 1000 &&
+             data.quizAnswer is string && data.quizAnswer.size() <= 300 &&
+             data.published is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCommunityMessage(data) {
+      return data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+             isValidCefr(data.senderCefr) &&
+             data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 128 &&
+             data.recipientId is string && data.recipientId.size() <= 128 &&
+             data.recipientName is string && data.recipientName.size() <= 80 &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 2000 &&
+             data.correctionSuggestion is string && data.correctionSuggestion.size() <= 1000 &&
+             data.correctedByName is string && data.correctedByName.size() <= 80 &&
+             data.likesCount is int && data.likesCount >= 0 && data.likesCount <= 100000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 1. User Profiles & Subcollections
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'cefrLevel', 'uiLanguage', 'xp', 'streakDays',
+                         'dailyGoalMinutes', 'dailyMinutesCompleted', 'wordsLearned', 'lessonsCompleted',
+                         'grammarScore', 'pronunciationScore', 'listeningScore', 'writingScore',
+                         'placementCompleted', 'subscriptionTier', 'selectedTrackId', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'email', 'avatarTag', 'cefrLevel', 'uiLanguage',
+                         'xp', 'streakDays', 'dailyGoalMinutes', 'dailyMinutesCompleted', 'wordsLearned',
+                         'lessonsCompleted', 'grammarScore', 'pronunciationScore', 'listeningScore',
+                         'writingScore', 'placementCompleted', 'subscriptionTier', 'selectedTrackId',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       (
+                         isAdmin() ||
+                         (
+                           request.auth.uid == userId &&
+                           incoming().userId == existing().userId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'displayName', 'email', 'avatarTag', 'cefrLevel', 'uiLanguage',
+                             'xp', 'streakDays', 'dailyGoalMinutes', 'dailyMinutesCompleted',
+                             'wordsLearned', 'lessonsCompleted', 'grammarScore', 'pronunciationScore',
+                             'listeningScore', 'writingScore', 'placementCompleted', 'subscriptionTier',
+                             'selectedTrackId', 'updatedAt'
+                           ])
+                         )
+                       );
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+
+      // 1a. User Flashcards Subcollection
+      match /flashcards/{cardId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(cardId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && request.auth.uid == userId && resource.data.userId == request.auth.uid;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(cardId) &&
+                         request.auth.uid == userId &&
+                         incoming().keys().hasAll([
+                           'userId', 'word', 'translationFr', 'translationAr', 'phonetic',
+                           'example', 'category', 'cefrLevel', 'isFavorite', 'boxLevel',
+                           'nextReviewEpochDay', 'mastered', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'word', 'translationFr', 'translationAr', 'phonetic',
+                           'example', 'category', 'cefrLevel', 'isFavorite', 'boxLevel',
+                           'nextReviewEpochDay', 'mastered', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidUserFlashcard(incoming(), userId);
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(cardId) &&
+                         isValidUserFlashcard(incoming(), userId) &&
+                         request.auth.uid == userId &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'word', 'translationFr', 'translationAr', 'phonetic', 'example',
+                           'category', 'cefrLevel', 'isFavorite', 'boxLevel',
+                           'nextReviewEpochDay', 'mastered', 'updatedAt'
+                         ]);
+
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(cardId) && request.auth.uid == userId;
+      }
+
+      // 1b. User Learning Progress Subcollection
+      match /progress/{recordId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(recordId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && request.auth.uid == userId && resource.data.userId == request.auth.uid;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(recordId) &&
+                         request.auth.uid == userId &&
+                         incoming().keys().hasAll([
+                           'userId', 'moduleType', 'itemId', 'title', 'cefrLevel',
+                           'score', 'maxScore', 'xpEarned', 'feedback', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'moduleType', 'itemId', 'title', 'cefrLevel',
+                           'score', 'maxScore', 'xpEarned', 'feedback', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidLearningProgress(incoming(), userId);
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(recordId) &&
+                         isValidLearningProgress(incoming(), userId) &&
+                         request.auth.uid == userId &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'score', 'maxScore', 'xpEarned', 'feedback', 'updatedAt'
+                         ]);
+
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(recordId) && request.auth.uid == userId;
+      }
+
+      // 1c. User AI Tutor Messages Subcollection
+      match /tutor_messages/{messageId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(messageId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && request.auth.uid == userId && resource.data.userId == request.auth.uid;
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(messageId) &&
+                         request.auth.uid == userId &&
+                         incoming().keys().hasAll([
+                           'userId', 'role', 'scenario', 'content', 'correction', 'explanation', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'role', 'scenario', 'content', 'correction', 'explanation', 'createdAt'
+                         ]) &&
+                         isValidTutorMessage(incoming(), userId);
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(messageId) &&
+                         isValidTutorMessage(incoming(), userId) &&
+                         request.auth.uid == userId &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'content', 'correction', 'explanation'
+                         ]);
+
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(messageId) && request.auth.uid == userId;
+      }
+    }
+
+    // 2. Global Leaderboard (Non-PII)
+    match /leaderboard/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn() && resource.data.xp >= 0;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'cefrLevel', 'xp', 'streakDays', 'badgesCount', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'cefrLevel', 'xp', 'streakDays', 'badgesCount', 'updatedAt'
+                       ]) &&
+                       isValidLeaderboardEntry(incoming(), userId);
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidLeaderboardEntry(incoming(), userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'cefrLevel', 'xp', 'streakDays', 'badgesCount', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+    }
+
+    // 3. Dynamic Admin / Educator Catalog (Courses, Lessons, Vocabulary, Exercises)
+    match /custom_catalog/{itemId} {
+      allow get: if isSignedIn() && isValidId(itemId) && (resource.data.published == true || resource.data.authorId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.published == true || resource.data.authorId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+                       isValidId(itemId) &&
+                       incoming().authorId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'authorId', 'itemType', 'title', 'subtitle', 'cefrLevel', 'contentBody',
+                         'translationFr', 'translationAr', 'quizQuestion', 'quizOptionsCsv',
+                         'quizAnswer', 'published', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'authorId', 'itemType', 'title', 'subtitle', 'cefrLevel', 'contentBody',
+                         'translationFr', 'translationAr', 'quizQuestion', 'quizOptionsCsv',
+                         'quizAnswer', 'published', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidCatalogItem(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(itemId) &&
+                       isValidCatalogItem(incoming()) &&
+                       (
+                         isAdmin() ||
+                         (
+                           resource.data.authorId == request.auth.uid &&
+                           incoming().authorId == existing().authorId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'itemType', 'title', 'subtitle', 'cefrLevel', 'contentBody',
+                             'translationFr', 'translationAr', 'quizQuestion', 'quizOptionsCsv',
+                             'quizAnswer', 'published', 'updatedAt'
+                           ])
+                         )
+                       );
+
+      allow delete: if isSignedIn() && isValidId(itemId) && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
+    // 4. User-to-User Community & Tandem Conversation Space
+    match /community_messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       incoming().senderId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'senderId', 'senderName', 'senderCefr', 'roomId',
+                         'recipientId', 'recipientName', 'content',
+                         'correctionSuggestion', 'correctedByName', 'likesCount',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'senderId', 'senderName', 'senderCefr', 'roomId',
+                         'recipientId', 'recipientName', 'content',
+                         'correctionSuggestion', 'correctedByName', 'likesCount',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidCommunityMessage(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       isValidCommunityMessage(incoming()) &&
+                       incoming().senderId == existing().senderId &&
+                       incoming().senderName == existing().senderName &&
+                       incoming().senderCefr == existing().senderCefr &&
+                       incoming().roomId == existing().roomId &&
+                       incoming().recipientId == existing().recipientId &&
+                       incoming().recipientName == existing().recipientName &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         (
+                           resource.data.senderId == request.auth.uid &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'content', 'correctionSuggestion', 'correctedByName', 'likesCount', 'updatedAt'
+                           ])
+                         ) ||
+                         (
+                           incoming().content == existing().content &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'correctionSuggestion', 'correctedByName', 'likesCount', 'updatedAt'
+                           ])
+                         )
+                       );
+
+      allow delete: if isSignedIn() && isValidId(messageId) && (resource.data.senderId == request.auth.uid || isAdmin());
+    }
+
+    // 5. Trusted Admin Lookup Collection (Read-Only for Owner/Admin, No Client Writes)
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (request.auth.uid == adminId || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "English Master AI",
+  "description": "Application intelligente d'apprentissage de l'anglais de A1 à C2 avec tuteur IA, test de niveau, vocabulaire, grammaire, écoute, prononciation et gamification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
