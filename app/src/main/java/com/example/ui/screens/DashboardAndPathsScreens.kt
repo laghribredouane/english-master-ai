@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +45,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -108,6 +113,7 @@ fun DashboardTabScreen(
 
     // Determine next unlocked unit for "Continue Learning"
     val nextUnitToPlay = units.firstOrNull { it.id !in completedUnitIds } ?: units.first()
+    val overallPathRatio = if (units.isEmpty()) 0f else (completedUnitIds.size.toFloat() / units.size.toFloat()).coerceIn(0f, 1f)
 
     if (activeUnitModal != null) {
         GamifiedUnitInteractiveDialog(
@@ -125,20 +131,373 @@ fun DashboardTabScreen(
         )
     }
 
-    Column(
+    val moduleCards = remember {
+        listOf(
+            Triple("vocabulary", "🧠 Vocabulary & Flashcards", "Mots du quotidien, idiomes, audio & répétition espacée SRS"),
+            Triple("grammar", "📖 Grammar & Tenses", "Tous les temps, conditionnels, voix passive & exercices corrigés"),
+            Triple("listening", "🎧 Listening & Podcasts", "Dialogues audio, vitesse 0.75x-1.5x & dictées interactives"),
+            Triple("speaking", "🎤 Speaking UK/US", "Reconnaissance vocale, prononciation & score de fluidité"),
+            Triple("reading", "📖 Reading & Stories", "Histoires, articles pro & glossaire tactile instantané"),
+            Triple("writing", "✍️ Writing & AI Coach", "Rédaction d'emails et essais corrigés par Gemini")
+        )
+    }
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .testTag("dashboard_learning_path_list"),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Top Gamified HUD Bar: 🔥 Streak | ⭐ XP | ❤️ Hearts | 🎯 Level
+        // 1. HEADER AREA: User Profile, Daily Streak (🔥), XP Count (⭐), Hearts (❤️) & Overall Path Ring
+        item(key = "header_user_profile_streak_xp") {
+            DashboardProfileHeaderCard(
+                profile = profile,
+                isGuestMode = isGuestMode,
+                heartsCount = heartsCount,
+                overallPathRatio = overallPathRatio,
+                completedUnitsCount = completedUnitIds.size,
+                totalUnitsCount = units.size,
+                nextUnitToPlay = nextUnitToPlay,
+                onRefillHearts = onRefillHearts,
+                onContinueLearning = { activeUnitModal = nextUnitToPlay },
+                onOpenPlacementTest = onOpenPlacementTest
+            )
+        }
+
+        // 2. Guest Mode Non-Intrusive Conversion Card & Permanent "💾 Sauvegarder ma progression" Button
+        if (isGuestMode) {
+            item(key = "guest_conversion_banner") {
+                val guestPromptText = when {
+                    profile.lessonsCompleted >= 3L ->
+                        "🎉 Tu progresses ! Crée un compte pour sauvegarder tes résultats."
+                    profile.streakDays >= 5L ->
+                        "🔥 Ne perds pas ta progression, synchronise ton compte."
+                    else ->
+                        "👤 Mode Invité actif : tes leçons, XP et flashcards sont enregistrés sur cet appareil."
+                }
+                Card(
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = guestPromptText,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Button(
+                            onClick = onOpenSaveProgressAuth,
+                            colors = ButtonDefaults.buttonColors(containerColor = SkyBlue, contentColor = Color.White),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("save_guest_progress_button")
+                        ) {
+                            Text(
+                                text = "💾 Sauvegarder ma progression (Compte Cloud)",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Daily Goal & Quests Card (🎯 Goals & 🎁 Rewards)
+        item(key = "daily_goal_card") {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp)
+            ) {
+                val goalRatio = (profile.dailyMinutesCompleted.toFloat() / profile.dailyGoalMinutes.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎯 Objectif journalier : ${profile.dailyMinutesCompleted} / ${profile.dailyGoalMinutes} min",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Surface(
+                            color = SunnyYellow.copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = "🎁 +25 XP Bonus",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    LinearProgressIndicator(
+                        progress = { goalRatio },
+                        color = FeatherGreen,
+                        trackColor = FeatherGreen.copy(alpha = 0.18f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(12.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "🧠 ${profile.wordsLearned} mots appris",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "📚 ${profile.lessonsCompleted} leçons terminées",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Learning Path Section Header
+        item(key = "learning_path_section_header") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "🗺️ Parcours d'Apprentissage Gamifié",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        text = "Complétez chaque unité pour faire progresser son cercle vert (#58CC02) et débloquer la suivante !",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(
+                    onClick = onOpenLearningPaths,
+                    modifier = Modifier.testTag("dashboard_paths_button")
+                ) {
+                    Text("🏆 10 Parcours", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // 5. VERTICAL SCROLLING LEARNING PATH: Material 3 Cards for Units with CircularProgressIndicator (#58CC02)
+        itemsIndexed(
+            items = units,
+            key = { _, unit -> unit.id }
+        ) { index, unit ->
+            val isCompleted = unit.id in completedUnitIds
+            val previousCompleted = index == 0 || index == 1 || units[index - 1].id in completedUnitIds
+            val isUnlocked = isCompleted || previousCompleted || (profile.xp >= (index * 80L))
+            val isCurrentActiveUnit = unit.id == nextUnitToPlay.id
+
+            // Compute unit completion ratio (0f..1f) for the #58CC02 CircularProgressIndicator
+            val unitCompletionRatio = when {
+                isCompleted -> 1.0f
+                isCurrentActiveUnit -> {
+                    val partialFromLessons = ((profile.lessonsCompleted % 3L).toFloat() / 3f).coerceIn(0.33f, 0.67f)
+                    if (profile.lessonsCompleted > 0L) partialFromLessons else 0.25f
+                }
+                isUnlocked -> 0.15f
+                else -> 0.0f
+            }
+
+            LearningPathUnitCard(
+                index = index,
+                totalUnits = units.size,
+                unit = unit,
+                isCompleted = isCompleted,
+                isUnlocked = isUnlocked,
+                isCurrentActiveUnit = isCurrentActiveUnit,
+                completionRatio = unitCompletionRatio,
+                onClickUnit = {
+                    if (isUnlocked) {
+                        activeUnitModal = unit
+                    }
+                }
+            )
+        }
+
+        // 6. AI Tutor & Community Conversation Quick Launch Card
+        item(key = "ai_tutor_and_community_card") {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "🤖 AI Tutor 24/7 & 💬 Conversation Communautaire",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Text(
+                        text = "Pratiquez l'oral avec Prof. Victoria ou échangez avec d'autres apprenants en Tandem 1-to-1 !",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = onOpenTutor,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("dashboard_ai_tutor_button")
+                        ) {
+                            Text("🤖 AI Tutor")
+                        }
+                        OutlinedButton(
+                            onClick = onOpenCommunityChat,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("dashboard_community_chat_button")
+                        ) {
+                            Text("💬 Salon & Tandem")
+                        }
+                    }
+                }
+            }
+        }
+
+        // 7. Quick Access Grid to the 6 Pedagogical Modules with Explicit Emojis
+        item(key = "modules_section_header") {
+            Text(
+                text = "📚 Modules d'Apprentissage (A1 → C2)",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+
+        itemsIndexed(
+            items = moduleCards,
+            key = { _, item -> "module_${item.first}" }
+        ) { _, (key, title, desc) ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToModule(key) }
+                    .testTag("open_module_$key"),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = desc,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = title,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+
+        // 8. Recent History
+        if (recentProgress.isNotEmpty()) {
+            item(key = "recent_history_section") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "🏆 Historique Récent",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    recentProgress.take(4).forEach { item ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(item.title, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "${item.moduleType.uppercase()} • Niveau ${item.cefrLevel} • Score ${item.score}/${item.maxScore}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Text(
+                                    "⭐ +${item.xpEarned} XP",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Header area displaying User Profile, Daily Streak (🔥), XP Count (⭐), Hearts (❤️),
+ * overall learning path circular progress in #58CC02, and quick "Continue Learning" action.
+ */
+@Composable
+private fun DashboardProfileHeaderCard(
+    profile: UserProfile,
+    isGuestMode: Boolean,
+    heartsCount: Int,
+    overallPathRatio: Float,
+    completedUnitsCount: Int,
+    totalUnitsCount: Int,
+    nextUnitToPlay: GamifiedUnitNode,
+    onRefillHearts: () -> Unit,
+    onContinueLearning: () -> Unit,
+    onOpenPlacementTest: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Top HUD Strip: User Profile Badge | 🔥 Daily Streak | ⭐ XP Count | ❤️ Hearts
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(22.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 4.dp,
             shadowElevation = 3.dp,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("dashboard_top_hud_bar")
         ) {
             Row(
                 modifier = Modifier
@@ -175,54 +534,14 @@ fun DashboardTabScreen(
             }
         }
 
-        // 2. Guest Mode Non-Intrusive Conversion Card & Permanent "💾 Sauvegarder ma progression" Button
-        if (isGuestMode) {
-            val guestPromptText = when {
-                profile.lessonsCompleted >= 3L ->
-                    "🎉 Tu progresses ! Crée un compte pour sauvegarder tes résultats."
-                profile.streakDays >= 5L ->
-                    "🔥 Ne perds pas ta progression, synchronise ton compte."
-                else ->
-                    "👤 Mode Invité actif : tes leçons, XP et flashcards sont enregistrés sur cet appareil."
-            }
-            Card(
-                shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = guestPromptText,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                    Button(
-                        onClick = onOpenSaveProgressAuth,
-                        colors = ButtonDefaults.buttonColors(containerColor = SkyBlue, contentColor = Color.White),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("save_guest_progress_button")
-                    ) {
-                        Text(
-                            text = "💾 Sauvegarder ma progression (Compte Cloud)",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
-
-        // 3. Mascot Barnaby Welcome Card + "Continue Learning" Button
+        // User Profile & Barnaby Mascot Hero Card with Overall Path CircularProgressIndicator (#58CC02)
         Card(
             shape = RoundedCornerShape(26.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("dashboard_profile_header_card")
         ) {
             Column(
                 modifier = Modifier.padding(18.dp),
@@ -233,29 +552,68 @@ fun DashboardTabScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_mascot_barnaby_1793914916960),
-                        contentDescription = "Barnaby Mascot English Master AI",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(88.dp)
-                            .clip(CircleShape)
-                            .border(3.dp, FeatherGreen, CircleShape)
-                    )
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "👋 Hello! Welcome back,",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                    // Avatar wrapped with #58CC02 CircularProgressIndicator
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(86.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            progress = { overallPathRatio.coerceAtLeast(0.12f) },
+                            color = FeatherGreen,
+                            trackColor = Color.White.copy(alpha = 0.55f),
+                            strokeWidth = 6.dp,
+                            strokeCap = StrokeCap.Round,
+                            modifier = Modifier.size(86.dp)
                         )
+                        Image(
+                            painter = painterResource(id = R.drawable.img_mascot_barnaby_1793914916960),
+                            contentDescription = "Barnaby Mascot English Master AI",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(70.dp)
+                                .clip(CircleShape)
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "👋 Hello! Welcome back,",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Surface(
+                                color = FeatherGreen.copy(alpha = 0.22f),
+                                shape = RoundedCornerShape(50)
+                            ) {
+                                Text(
+                                    text = if (isGuestMode) "👤 Invité" else "🔐 Cloud",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                         Text(
                             text = profile.displayName,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
+                        Text(
+                            text = "🔥 Série : ${profile.streakDays} jours • ⭐ Total : ${profile.xp} XP • 🗺️ $completedUnitsCount/$totalUnitsCount unités",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                         Surface(
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
                             shape = RoundedCornerShape(14.dp)
                         ) {
                             Text(
@@ -268,7 +626,7 @@ fun DashboardTabScreen(
                     }
                 }
 
-                // Level & XP Progress Bar
+                // Level & XP Progress Bar in Brand Green (#58CC02)
                 val currentLevelNum = (profile.xp / 200L) + 1L
                 val xpInCurrentLevel = (profile.xp % 200L).toFloat() / 200f
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -305,7 +663,7 @@ fun DashboardTabScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
-                        onClick = { activeUnitModal = nextUnitToPlay },
+                        onClick = onContinueLearning,
                         colors = ButtonDefaults.buttonColors(containerColor = FeatherGreen, contentColor = Color.White),
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier
@@ -333,383 +691,221 @@ fun DashboardTabScreen(
                 }
             }
         }
+    }
+}
 
-        // 4. Daily Goal & Quests Card (🎯 Goals & 🎁 Rewards)
+/**
+ * Material 3 Unit Card for the vertical learning path featuring dual #58CC02 CircularProgressIndicators
+ * (around the unit badge and as a right-hand completion percentage ring).
+ */
+@Composable
+private fun LearningPathUnitCard(
+    index: Int,
+    totalUnits: Int,
+    unit: GamifiedUnitNode,
+    isCompleted: Boolean,
+    isUnlocked: Boolean,
+    isCurrentActiveUnit: Boolean,
+    completionRatio: Float,
+    onClickUnit: () -> Unit
+) {
+    val unitAccentColor = Color(unit.accentColorHex)
+    val animatedCompletion by animateFloatAsState(
+        targetValue = completionRatio.coerceIn(0f, 1f),
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "unitCircularProgress"
+    )
+    val completionPercent = (animatedCompletion * 100).toInt()
+
+    // Subtle winding offset for the gamified learning path
+    val horizontalBias = when (index % 4) {
+        1 -> 16.dp
+        3 -> (-16).dp
+        else -> 0.dp
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (horizontalBias > 0.dp) horizontalBias else 0.dp,
+                end = if (horizontalBias < 0.dp) (-horizontalBias.value).dp else 0.dp
+            )
+    ) {
         ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp)
-        ) {
-            val goalRatio = (profile.dailyMinutesCompleted.toFloat() / profile.dailyGoalMinutes.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "🎯 Objectif journalier : ${profile.dailyMinutesCompleted} / ${profile.dailyGoalMinutes} min",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Surface(
-                        color = SunnyYellow.copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(
-                            text = "🎁 +25 XP Bonus",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-                LinearProgressIndicator(
-                    progress = { goalRatio },
-                    color = VibrantOrange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(12.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "🧠 ${profile.wordsLearned} mots appris",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "📚 ${profile.lessonsCompleted} leçons terminées",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
-
-        // 5. PARCOURS PÉDAGOGIQUE GAMIFIÉ (Chemin Vertical des 7 Unités)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
+            onClick = onClickUnit,
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            elevation = CardDefaults.elevatedCardElevation(
+                defaultElevation = if (isCurrentActiveUnit) 6.dp else 2.dp
+            ),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = when {
+                    isCompleted -> FeatherGreen.copy(alpha = 0.12f)
+                    isUnlocked -> MaterialTheme.colorScheme.surface
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                }
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (isCurrentActiveUnit) {
+                        Modifier.border(2.5.dp, FeatherGreen, RoundedCornerShape(24.dp))
+                    } else {
+                        Modifier
+                    }
+                )
+                .testTag("gamified_unit_${unit.unitNumber}")
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Left: Unit Icon Node wrapped in a #58CC02 CircularProgressIndicator
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(68.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = "🗺️ Parcours d'Apprentissage Gamifié",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = "Complétez chaque unité pour gagner des étoiles ⭐ et débloquer la suivante !",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    TextButton(
-                        onClick = onOpenLearningPaths,
-                        modifier = Modifier.testTag("dashboard_paths_button")
-                    ) {
-                        Text("🏆 10 Parcours")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                units.forEachIndexed { index, unit ->
-                    val isCompleted = unit.id in completedUnitIds
-                    val previousCompleted = index == 0 || index == 1 || units[index - 1].id in completedUnitIds
-                    val isUnlocked = isCompleted || previousCompleted || (profile.xp >= (index * 80L))
-                    val unitColor = Color(unit.accentColorHex)
-
-                    // Winding horizontal offset effect for visual path
-                    val horizontalBias = when (index % 4) {
-                        1 -> 24.dp
-                        3 -> (-24).dp
-                        else -> 0.dp
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                    CircularProgressIndicator(
+                        progress = { animatedCompletion },
+                        color = FeatherGreen,
+                        trackColor = FeatherGreen.copy(alpha = 0.20f),
+                        strokeWidth = 5.dp,
+                        strokeCap = StrokeCap.Round,
+                        modifier = Modifier.size(68.dp)
+                    )
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = if (horizontalBias > 0.dp) horizontalBias else 0.dp, end = if (horizontalBias < 0.dp) (-horizontalBias.value).dp else 0.dp)
-                    ) {
-                        ElevatedCard(
-                            onClick = {
-                                if (isUnlocked) {
-                                    activeUnitModal = unit
-                                }
-                            },
-                            shape = RoundedCornerShape(22.dp),
-                            colors = CardDefaults.elevatedCardColors(
-                                containerColor = if (isUnlocked) {
-                                    unitColor.copy(alpha = 0.14f)
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                                }
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isUnlocked) unitAccentColor else Color.Gray.copy(alpha = 0.4f)
                             ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("gamified_unit_${unit.unitNumber}")
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                // Circular Unit Node Badge
-                                Box(
-                                    modifier = Modifier
-                                        .size(60.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isUnlocked) unitColor else Color.Gray.copy(alpha = 0.4f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isUnlocked) {
-                                        Text(
-                                            text = unit.emoji,
-                                            style = MaterialTheme.typography.headlineMedium
-                                        )
-                                    } else {
-                                        Icon(
-                                            Icons.Default.Lock,
-                                            contentDescription = "Locked Unit",
-                                            tint = Color.White
-                                        )
-                                    }
-                                }
-
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Text(
-                                            text = unit.titleEn,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.ExtraBold
-                                        )
-                                        Surface(
-                                            color = if (isUnlocked) unitColor else Color.Gray,
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Text(
-                                                text = unit.cefrLevel,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = Color.White,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                    Text(
-                                        text = unit.subtitleFr,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(
-                                            text = if (isCompleted) "⭐⭐⭐ Complété" else if (isUnlocked) "⭐☆☆ Débloqué (${unit.lessons.size} leçons)" else "🔒 Verrouillé",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isCompleted) Color(0xFFD97706) else MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = "• +${unit.xpReward} XP",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-
-                                if (isUnlocked) {
-                                    Surface(
-                                        color = unitColor,
-                                        shape = CircleShape,
-                                        modifier = Modifier.size(40.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = if (isCompleted) Icons.Default.CheckCircle else Icons.Default.PlayArrow,
-                                                contentDescription = "Start Unit",
-                                                tint = Color.White
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Vertical path connector line between units
-                        if (index < units.lastIndex) {
-                            Box(
-                                modifier = Modifier
-                                    .width(6.dp)
-                                    .height(22.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(
-                                        if (isCompleted) FeatherGreen else MaterialTheme.colorScheme.surfaceVariant
-                                    )
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isUnlocked) {
+                            Text(
+                                text = unit.emoji,
+                                style = MaterialTheme.typography.headlineSmall
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Lock,
+                                contentDescription = "Locked Unit",
+                                tint = Color.White
                             )
                         }
                     }
                 }
-            }
-        }
 
-        // 6. AI Tutor & Community Conversation Quick Launch Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "🤖 AI Tutor 24/7 & 💬 Conversation Communautaire",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-                Text(
-                    text = "Pratiquez l'oral avec Prof. Victoria ou échangez avec d'autres apprenants en Tandem 1-to-1 !",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = onOpenTutor,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("dashboard_ai_tutor_button")
-                    ) {
-                        Text("🤖 AI Tutor")
-                    }
-                    OutlinedButton(
-                        onClick = onOpenCommunityChat,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("dashboard_community_chat_button")
-                    ) {
-                        Text("💬 Salon & Tandem")
-                    }
-                }
-            }
-        }
-
-        // 7. Quick Access Grid to the 6 Pedagogical Modules with Explicit Emojis
-        Text(
-            text = "📚 Modules d'Apprentissage (A1 → C2)",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.ExtraBold
-        )
-
-        val moduleCards = listOf(
-            Triple("vocabulary", "🧠 Vocabulary & Flashcards", "Mots du quotidien, idiomes, audio & répétition espacée SRS"),
-            Triple("grammar", "📖 Grammar & Tenses", "Tous les temps, conditionnels, voix passive & exercices corrigés"),
-            Triple("listening", "🎧 Listening & Podcasts", "Dialogues audio, vitesse 0.75x-1.5x & dictées interactives"),
-            Triple("speaking", "🎤 Speaking UK/US", "Reconnaissance vocale, prononciation & score de fluidité"),
-            Triple("reading", "📖 Reading & Stories", "Histoires, articles pro & glossaire tactile instantané"),
-            Triple("writing", "✍️ Writing & AI Coach", "Rédaction d'emails et essais corrigés par Gemini")
-        )
-
-        moduleCards.forEach { (key, title, desc) ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onNavigateToModule(key) }
-                    .testTag("open_module_$key"),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = desc,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = title,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-
-        // 8. Recent History
-        if (recentProgress.isNotEmpty()) {
-            Text(
-                text = "🏆 Historique Récent",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            recentProgress.take(4).forEach { item ->
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth()
+                // Middle: Unit Title, CEFR badge, description, stars & XP reward
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(item.title, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = unit.titleEn,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Surface(
+                            color = if (isUnlocked) unitAccentColor else Color.Gray,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
                             Text(
-                                "${item.moduleType.uppercase()} • Niveau ${item.cefrLevel} • Score ${item.score}/${item.maxScore}",
-                                style = MaterialTheme.typography.bodySmall
+                                text = unit.cefrLevel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
+                    }
+                    Text(
+                        text = unit.subtitleFr,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Text(
-                            "⭐ +${item.xpEarned} XP",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.ExtraBold
+                            text = when {
+                                isCompleted -> "⭐⭐⭐ Complété"
+                                isCurrentActiveUnit -> "🟢 En cours (${unit.lessons.size} leçons)"
+                                isUnlocked -> "⭐☆☆ Débloqué (${unit.lessons.size} leçons)"
+                                else -> "🔒 Verrouillé"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                isCompleted -> FeatherGreen
+                                isCurrentActiveUnit -> FeatherGreen
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                        Text(
+                            text = "• +${unit.xpReward} XP",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                // Right: Dedicated CircularProgressIndicator (#58CC02) showing completion %
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(54.dp)
+                        .testTag("unit_progress_${unit.unitNumber}")
+                ) {
+                    CircularProgressIndicator(
+                        progress = { animatedCompletion },
+                        color = FeatherGreen,
+                        trackColor = FeatherGreen.copy(alpha = 0.18f),
+                        strokeWidth = 5.dp,
+                        strokeCap = StrokeCap.Round,
+                        modifier = Modifier.size(54.dp)
+                    )
+                    if (isCompleted) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "100% Completed",
+                            tint = FeatherGreen,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "$completionPercent%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isUnlocked) FeatherGreen else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
+        }
+
+        // Vertical path connector line between units in #58CC02 when completed
+        if (index < totalUnits - 1) {
+            Box(
+                modifier = Modifier
+                    .width(6.dp)
+                    .height(22.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(
+                        if (isCompleted) FeatherGreen else FeatherGreen.copy(alpha = 0.22f)
+                    )
+            )
         }
     }
 }
